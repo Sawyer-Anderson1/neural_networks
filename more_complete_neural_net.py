@@ -26,6 +26,11 @@ class ActivationFunction:
 
         return exponentiation_values / normalization_sum
 
+class OptimizationAlgorithms:
+    # will have stochastic gradient descent, adam, etc.
+    def stochastic_gradient_descent(self):
+        print('placeholder')
+
 # Loss function(s) class: for regression has MAE, MSE and for categoricalization has Cross-entropy and its types, Hinge
 class LossFunction:
     def mean_absolute_error(self, y_true, y_pred):
@@ -82,8 +87,8 @@ class NeuralLayer:
 # NeuralNetwork class: is initiated with an array called node_array whose integer values represent how much nodes per layer (including input layer), 
 # to check how much layers there are in the network we get the length of node_array
 # In initiation the __init__ method calls two functions that generate randomized weights and biases (generate_weights and generate_biases)
-# train method: takes the data and true outputs,
-# also takes an activation function, can be called with a learning rate (default to 0.1), and epochs (default to 1)
+# train_compile method: takes the data and true outputs,
+# also takes an activation function, can be called with a learning rate (default to 0.1), and epochs (default to 100)
 class NeuralNetwork:
     def __init__(self, node_array):
         self.num_layers = len(node_array)
@@ -127,21 +132,30 @@ class NeuralNetwork:
 
         self.biases = randomized_biases
 
-    def train(self, inputs, true_outputs, activation_function, learning_rate = 0.1, epochs=1):
-        
-        # we start the iteration from the first hidden layer instead of the input layer so that 
-        for iter in range(1, self.num_layers):
-            layer_name = "layer_" + str(iter)
-            weights_at_layer = self.weights[iter - 1] # takes the weights that go from the previous layer to the current layer
+    def train_compile(self, inputs, true_outputs, activation_function, loss_function, optimizer_algo, learning_rate = 0.1, epochs=100):
+        # do n amount of forward and back propagation based off the value of epochs
+        for epoch in range(epochs):
+            # forward propagation
+            # we start the iteration from the first hidden layer instead of the input layer so that 
+            for iter in range(1, self.num_layers):
+                layer_name = "layer_" + str(iter)
+                weights_at_layer = self.weights[iter - 1] # takes the weights that go from the previous layer to the current layer
 
-            self.layer_name = NeuralLayer(self.nodes_num[iter], weights_at_layer, self.biases[iter])
-            outputs = self.layer_name.feedforward(inputs, self.activation_function)
+                self.layer_name = NeuralLayer(self.nodes_num[iter], weights_at_layer, self.biases[iter])
+                outputs = self.layer_name.feedforward(inputs, self.activation_function)
 
-            # the outputs become inputs for the next nodes
-            inputs = outputs
-        
-        # then do back propagation
-        #...
+                # for the inner/hidden layers the outputs become the inputs for the next layer
+                if iter < self.num_layers:
+                    # the outputs become inputs for the next nodes
+                    inputs = outputs
+                # else we have the final outputs for this pass of forward propagation
+
+            # then do back propagation (using Stochastic Gradient Descent)
+            # calculate the total error 
+            total_error = getattr(LossFunction(), loss_function)(true_outputs, outputs)
+            # then compute the gradients of the parameters
+            # ...
+
 
 #network = NeuralNetwork([3, 6, 1])
-#network.train([0, 1, 0], [0], "sigmoid", 0.3, 10)
+#network.train_compile([0, 1, 0], [0], "sigmoid", mean_squared_error, stochastic_gradient_descent, 0.3, 1000)
