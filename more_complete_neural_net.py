@@ -33,10 +33,13 @@ class OptimizationAlgorithms:
 
 # Loss function(s) class: for regression has MAE, MSE and for categoricalization has Cross-entropy and its types, Hinge
 class LossFunction:
-    def mean_absolute_error(self, y_true, y_pred):
+    def mean_absolute_error(self, y_true, y_pred, deriv=False):
         return (np.abs(y_true - y_pred)).mean()
 
-    def mean_squared_error(self, y_true, y_pred):
+    def mean_squared_error(self, y_true, y_pred, deriv=False):
+        if deriv == True:
+            N = y_true.shape[0]
+            return -2*(y_true - y_pred) / N
         return ((y_true - y_pred) ** 2).mean()
 
     def cross_entropy(self, cross_entropy_type):
@@ -61,19 +64,21 @@ class Neuron:
         self.bias = bias
 
     def forward_propagation(self, inputs, activation_function):
-        weighted_inputs = np.dot(self.weights, inputs) + self.bias
+        weighted_inputs = np.dot(inputs, self.weights) + self.bias
         return getattr(ActivationFunction(), activation_function)(weighted_inputs)
 
 # NeuronLayer class: capable of making a layer in a neural network by taking a node_nums int that specifies how much nodes are in the layer.
 # Also takes the weights for that layer (so the weights coming from past nodes), and the biases at the layer.
 # And is able to do forward propagation or feedforward by taking the inputs (from the previous layer, except for the input layer).
 class NeuralLayer:
-    nodes = []
+    def __init__(self, node_nums, weights_at_layer, biases_at_layer):
+        self.nodes = []
 
-    def __init__(self, node_nums, weights, biases_at_layer):
         for iter in range(node_nums):
             node_name = "node_" + str(iter)
-            self.node_name = Neuron(weights, biases_at_layer[iter])
+            weights_to_node = weights_at_layer[:, iter].T
+
+            self.node_name = Neuron(weights_to_node, biases_at_layer[iter])
             self.nodes.append(self.node_name)
 
     def  feedforward(self, inputs, activation_function):
@@ -81,7 +86,7 @@ class NeuralLayer:
 
         for node in self.nodes:
             outputs.append(node.forward_propagation(inputs, activation_function))
-        
+
         return outputs
 
 # NeuralNetwork class: is initiated with an array called node_array whose integer values represent how much nodes per layer (including input layer), 
@@ -106,12 +111,14 @@ class NeuralNetwork:
 
         for iter in range(self.num_layers - 1):
             # a matrix or array of the array of weights for each node in a layer
-            weights_matrix = 2*np.random.random((self.num_nodes[iter], self.num_nodes[iter + 1])) - 1
+                weights_matrix = 2*np.random.random((self.num_nodes[iter], self.num_nodes[iter + 1])) - 1
 
-            randomized_weights.append(weights_matrix)
+                randomized_weights.append(weights_matrix)
 
-        self.weights = randomized_weights 
+        self.weights = randomized_weights
         
+        print(self.weights)
+
     def generate_biases(self):
         # seed random for determinism
         np.random.seed(1)
@@ -133,29 +140,83 @@ class NeuralNetwork:
         self.biases = randomized_biases
 
     def train_compile(self, inputs, true_outputs, activation_function, loss_function, optimizer_algo, learning_rate = 0.1, epochs=100):
+        # convert the inputs to an numpy array
+        inputs = np.array(inputs)
+        
         # do n amount of forward and back propagation based off the value of epochs
         for epoch in range(epochs):
+            # create an array of the layers and all the outputs that were calculated at each node
+            layers = []
+            node_outputs = []
+
+            layer_inputs = inputs
+
             # forward propagation
-            # we start the iteration from the first hidden layer instead of the input layer so that 
+            # we start the iteration from the first hidden layer instead of the input layer 
             for iter in range(1, self.num_layers):
                 layer_name = "layer_" + str(iter)
                 weights_at_layer = self.weights[iter - 1] # takes the weights that go from the previous layer to the current layer
 
-                self.layer_name = NeuralLayer(self.nodes_num[iter], weights_at_layer, self.biases[iter])
-                outputs = self.layer_name.feedforward(inputs, self.activation_function)
+                self.layer_name = NeuralLayer(self.num_nodes[iter], weights_at_layer, self.biases[iter])
+                outputs = self.layer_name.feedforward(layer_inputs, activation_function)
 
+                layers.append(self.layer_name)
+                node_outputs.append(np.array(outputs))
+                
                 # for the inner/hidden layers the outputs become the inputs for the next layer
-                if iter < self.num_layers:
+                if iter < self.num_layers - 1:
                     # the outputs become inputs for the next nodes
-                    inputs = outputs
+                    layer_inputs = outputs
                 # else we have the final outputs for this pass of forward propagation
-
+            
             # then do back propagation (using Stochastic Gradient Descent)
+            # compute the gradients of the parameters
+            # compute deriv_error / deriv_w_? for each weights
+            # need to compute partial derivatives of deriv_total_error / deriv_y_pred, deriv_y_pred / derive_hidden_?, deriv_hidden_? / deriv_w_? for each output of nodes and their weight
+            # also need to compute deriv_hidden_? / deriv_bias_? for each nodes
+            # the variable representation of these will be in the form: (in the case of deriv_total_error / deriv_w_?) d_L_d_w? where ? is the numeric identifier of a specific weight
+            
+            # d_L_d_y_pred is shared by d_L_d_w?, so compute it outside of the loop
+            # doing self.num_layers - 2 since we do not have the input layer in the outputs
+            d_L_d_y_pred = getattr(LossFunction(), loss_function)(true_outputs, node_outputs[self.num_layers - 2])
+
+            # the arrays for the derivatives start from the last layer and go back forwards
+            d_y_pred_d_w = []
+            d_y_pred_d_b = []
+            d_y_pred_d_h = []
+
+            # initialize d_y_pred_d_h for outputs (when h is the outputs), where the d_y_pred_d_h is 1:
+            d_y_pred_out = []
+            for iter in range(len(node_outputs[self.num_layers - 2])):
+                d_y_pred_out.append(1)
+            d_y_pred_d_h.append(np.array(d_y_pred_out))
+
+            for outputs in reversed(node_outputs):
+                d_y_pred_d_b_layer = []
+                prev_layer_i = node_outputs.index(outputs) - 1
+                for output in outputs:
+                    for prev_nodes in node_outputs[prev_layer_i]:
+                        d_y_pred_d_w_layer = []
+                        for prev_node in prev_nodes:
+                            d_y_pred_d_wi = prev_node * getattr(ActivationFunction(), activation_function)(output, deriv=True)
+                            d_y_pred_d_w_layer.append(d_y_pred_d_wi)
+
+                        weights_from_layer = self.weights[prev_layer_i]
+
+                        d_y_pred_d_h_layer = []
+                        for weight in weights_from_layer:
+                            d_y_pred_d_hi = weight * getattr(ActivationFunction(), activation_function)(output, deriv=True)
+                            d_y_pred_d_h_layer.append(d_y_pred_d_hi)
+
+                    d_y_pred_d_bi = getattr(ActivationFunction(), activation_function)(output, deriv=True)
+                    d_y_pred_d_b_layer.append(d_y_pred_d_bi)
+
+                d_y_pred_d_w.append(d_y_pred_d_w_layer)
+                d_y_pred_d_b.append(d_y_pred_d_b_layer)
+                d_y_pred_d_h.append(d_y_pred_d_h_layer)
+
             # calculate the total error 
             total_error = getattr(LossFunction(), loss_function)(true_outputs, outputs)
-            # then compute the gradients of the parameters
-            # ...
 
-
-#network = NeuralNetwork([3, 6, 1])
-#network.train_compile([0, 1, 0], [0], "sigmoid", mean_squared_error, stochastic_gradient_descent, 0.3, 1000)
+network = NeuralNetwork([3, 6, 1])
+network.train_compile([0, 1, 0], [0], "sigmoid", "mean_squared_error", "stochastic_gradient_descent", 0.3, 1000)
