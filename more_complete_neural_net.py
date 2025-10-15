@@ -116,8 +116,6 @@ class NeuralNetwork:
                 randomized_weights.append(weights_matrix)
 
         self.weights = randomized_weights
-        
-        print(self.weights)
 
     def generate_biases(self):
         # seed random for determinism
@@ -138,11 +136,12 @@ class NeuralNetwork:
                 randomized_biases.append(layer_biases)
 
         self.biases = randomized_biases
-
+        
     def train_compile(self, inputs, true_outputs, activation_function, loss_function, optimizer_algo, learning_rate = 0.1, epochs=100):
         # convert the inputs to an numpy array
         inputs = np.array(inputs)
-        
+        true_outputs = np.array(true_outputs)
+
         # do n amount of forward and back propagation based off the value of epochs
         for epoch in range(epochs):
             # create an array of the layers and all the outputs that were calculated at each node
@@ -176,47 +175,97 @@ class NeuralNetwork:
             # also need to compute deriv_hidden_? / deriv_bias_? for each nodes
             # the variable representation of these will be in the form: (in the case of deriv_total_error / deriv_w_?) d_L_d_w? where ? is the numeric identifier of a specific weight
             
-            # d_L_d_y_pred is shared by d_L_d_w?, so compute it outside of the loop
-            # doing self.num_layers - 2 since we do not have the input layer in the outputs
-            d_L_d_y_pred = getattr(LossFunction(), loss_function)(true_outputs, node_outputs[self.num_layers - 2])
-
             # the arrays for the derivatives start from the last layer and go back forwards
+            d_L_d_y_pred = []
             d_y_pred_d_w = []
             d_y_pred_d_b = []
             d_y_pred_d_h = []
 
             # initialize d_y_pred_d_h for outputs (when h is the outputs), where the d_y_pred_d_h is 1:
             d_y_pred_out = []
-            for iter in range(len(node_outputs[self.num_layers - 2])):
+            for iter in range(len(self.weights[self.num_layers - 2])):
                 d_y_pred_out.append(1)
             d_y_pred_d_h.append(np.array(d_y_pred_out))
 
+            node_output_position = len(node_outputs) - 1
             for outputs in reversed(node_outputs):
+                d_L_d_y_pred_layer = []
+                d_y_pred_d_w_layer = []
                 d_y_pred_d_b_layer = []
-                prev_layer_i = node_outputs.index(outputs) - 1
-                for output in outputs:
-                    for prev_nodes in node_outputs[prev_layer_i]:
-                        d_y_pred_d_w_layer = []
-                        for prev_node in prev_nodes:
-                            d_y_pred_d_wi = prev_node * getattr(ActivationFunction(), activation_function)(output, deriv=True)
-                            d_y_pred_d_w_layer.append(d_y_pred_d_wi)
+                d_y_pred_d_h_layer = []
+                
+                prev_layer_i = node_output_position - 1
 
-                        weights_from_layer = self.weights[prev_layer_i]
+                if (prev_layer_i == -1):
+                    weights_from_layer = self.weights[0]
 
-                        d_y_pred_d_h_layer = []
-                        for weight in weights_from_layer:
+                    for output in outputs:
+                        d_y_pred_d_w_node = []
+                        d_y_pred_d_h_node = []
+
+                        # I don't think I need to find d_y_pred_d_hi for the first hidden node to input nodes
+                        # but I will keep it for now
+                        weights_to_node = weights_from_layer[:, node_output_position]
+
+                        for input in inputs:
+                            d_y_pred_d_wi = input * getattr(ActivationFunction(), activation_function)(output, deriv=True)
+                            d_y_pred_d_w_node.append(d_y_pred_d_wi)
+
+                        for weight in weights_to_node:
                             d_y_pred_d_hi = weight * getattr(ActivationFunction(), activation_function)(output, deriv=True)
-                            d_y_pred_d_h_layer.append(d_y_pred_d_hi)
+                            d_y_pred_d_h_node.append(d_y_pred_d_hi)
+
+                        d_y_pred_d_bi = getattr(ActivationFunction(), activation_function)(output, deriv=True)
+                        d_y_pred_d_b_layer.append(d_y_pred_d_bi)
+
+                        d_y_pred_d_w_layer.append(np.array(d_y_pred_d_w_node))
+                        d_y_pred_d_h_layer.append(np.array(d_y_pred_d_h_node))
+                    d_y_pred_d_w.append(np.array(d_y_pred_d_w_layer))
+                    d_y_pred_d_b.append(np.array(d_y_pred_d_b_layer))
+                    d_y_pred_d_h.append(np.array(d_y_pred_d_h_layer))
+
+                    break
+
+                weights_from_layer = self.weights[prev_layer_i + 1]
+
+                if (node_output_position + 1 > len(node_outputs) - 1):
+                    d_L_d_y_pred_layer = getattr(LossFunction(), loss_function)(true_outputs, outputs, deriv=True)
+
+                for output in outputs:
+                    d_L_d_y_pred_node = []
+                    d_y_pred_d_w_node = []
+                    d_y_pred_d_h_node = []
+                    
+                    weights_to_node = weights_from_layer[:, prev_layer_i]
+
+                    for prev_node in node_outputs[prev_layer_i]:
+                        d_y_pred_d_wi = prev_node * getattr(ActivationFunction(), activation_function)(output, deriv=True)
+                        d_y_pred_d_w_node.append(d_y_pred_d_wi)
+
+                    for weight in weights_to_node:
+                        d_y_pred_d_hi = weight * getattr(ActivationFunction(), activation_function)(output, deriv=True)
+                        d_y_pred_d_h_node.append(d_y_pred_d_hi)
 
                     d_y_pred_d_bi = getattr(ActivationFunction(), activation_function)(output, deriv=True)
                     d_y_pred_d_b_layer.append(d_y_pred_d_bi)
+                    
+                    d_L_d_y_pred_layer.append(np.array(d_L_d_y_pred_node))
+                    d_y_pred_d_w_layer.append(np.array(d_y_pred_d_w_node))
+                    d_y_pred_d_h_layer.append(np.array(d_y_pred_d_h_node))
+                d_L_d_y_pred.append(np.array(d_L_d_y_pred_layer))
+                d_y_pred_d_w.append(np.array(d_y_pred_d_w_layer))
+                d_y_pred_d_b.append(np.array(d_y_pred_d_b_layer))
+                d_y_pred_d_h.append(np.array(d_y_pred_d_h_layer))
 
-                d_y_pred_d_w.append(d_y_pred_d_w_layer)
-                d_y_pred_d_b.append(d_y_pred_d_b_layer)
-                d_y_pred_d_h.append(d_y_pred_d_h_layer)
+                # update node_output_position for next layer back in the network
+                node_output_position -= 1
+            
+            print(d_L_d_y_pred)
+
+            # then use all the arrays of the 
 
             # calculate the total error 
-            total_error = getattr(LossFunction(), loss_function)(true_outputs, outputs)
+            total_error = getattr(LossFunction(), loss_function)(true_outputs, node_outputs[-1])
 
-network = NeuralNetwork([3, 6, 1])
-network.train_compile([0, 1, 0], [0], "sigmoid", "mean_squared_error", "stochastic_gradient_descent", 0.3, 1000)
+network = NeuralNetwork([3, 6, 2])
+network.train_compile([0, 1, 0], [0, 1], "sigmoid", "mean_squared_error", "stochastic_gradient_descent", 0.3, 1)
