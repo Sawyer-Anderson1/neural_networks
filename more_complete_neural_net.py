@@ -27,9 +27,68 @@ class ActivationFunction:
         return exponentiation_values / normalization_sum
 
 class OptimizationAlgorithms:
+    def gradient_descent(self, layer_idx, gradient_mat, bias_gradient_mat):
+        # calculate changes in weights and biases
+        delta_weight = (self.momentum * self.last_weight_change[layer_idx]) - (self.learning_rate * gradient_mat)
+
+        delta_bias = (self.momentum * self.last_bias_change[layer_idx]) - (self.learning_rate * bias_gradient_mat)
+
+        # update weights
+        self.weights[layer_idx] += delta_weight
+        self.biases[layer_idx] += delta_bias
+
+        # keep track of the latest changes to weights and biases
+        self.last_weight_change[layer_idx] = 1 * delta_weight
+        self.last_bias_change[layer_idx] = 1 * delta_bias
+
     # will have stochastic gradient descent, adam, etc.
-    def stochastic_gradient_descent(self):
-        print('placeholder')
+    def stochastic_gradient_descent(self, 
+                                    learning_rate, 
+                                    momentum, 
+                                    node_net_inputs, 
+                                    true_outputs, 
+                                    node_outputs, 
+                                    activation_function, 
+                                    loss_function, 
+                                    weights, 
+                                    biases, 
+                                    last_weight_change, 
+                                    last_bias_change):
+        self.learning_rate = learning_rate
+        self.momentum = momentum
+        self.weights = weights
+        self.biases = biases
+
+        self.last_weight_change = last_weight_change
+        self.last_bias_change = last_bias_change
+
+        for iter in range(len(node_outputs) + 1):
+            # node_outputs only has the values for the hidden nodes and the output nodes (so do back_index - 1)
+            back_index = len(node_outputs) - iter - 1
+            
+            print(node_outputs[back_index])
+            if iter == 0: # the final/output layer
+                d_activation = getattr(ActivationFunction(), activation_function)(node_net_inputs[back_index], deriv=True)
+                d_error = getattr(LossFunction(), loss_function)(true_outputs, node_outputs[back_index], deriv=True)
+                delta = d_error * d_activation
+
+                gradient_mat = np.dot(node_outputs[back_index].T, delta)
+                bias_gradient_mat = 1 * delta
+
+                # apply gradient descent
+                self.gradient_descent(back_index, gradient_mat, bias_gradient_mat)
+
+            else: # the hidden layers
+                W_trans = weights[back_index + 1].T
+                d_activation = getattr(ActivationFunction(), activation_function)(node_net_inputs[back_index], deriv=True)
+                d_error = getattr(LossFunction(), loss_function)(delta, W_trans)
+                delta = d_error * d_activation
+
+                gradient_mat = np.dot(node_outputs[back_index].T, delta)
+                bias_gradient_mat = 1 * delta
+
+                # apply gradient descent
+                self.gradient_descent(back_index, gradient_mat, bias_gradient_mat)
 
 # Loss function(s) class: for regression has MAE, MSE and for categoricalization has Cross-entropy and its types, Hinge
 class LossFunction:
@@ -65,7 +124,7 @@ class Neuron:
 
     def forward_propagation(self, inputs, activation_function):
         weighted_inputs = np.dot(inputs, self.weights) + self.bias
-        return getattr(ActivationFunction(), activation_function)(weighted_inputs)
+        return weighted_inputs, getattr(ActivationFunction(), activation_function)(weighted_inputs)
 
 # NeuronLayer class: capable of making a layer in a neural network by taking a node_nums int that specifies how much nodes are in the layer.
 # Also takes the weights for that layer (so the weights coming from past nodes), and the biases at the layer.
@@ -83,11 +142,14 @@ class NeuralLayer:
 
     def  feedforward(self, inputs, activation_function):
         outputs = []
+        net_inputs = []
 
         for node in self.nodes:
-            outputs.append(node.forward_propagation(inputs, activation_function))
+            net_input, output = node.forward_propagation(inputs, activation_function)
+            net_inputs.append(net_input)
+            outputs.append(output)
 
-        return outputs
+        return net_inputs, outputs
 
 # NeuralNetwork class: is initiated with an array called node_array whose integer values represent how much nodes per layer (including input layer), 
 # to check how much layers there are in the network we get the length of node_array
@@ -101,6 +163,9 @@ class NeuralNetwork:
 
         self.generate_weights()
         self.generate_biases()
+
+        self.last_weight_change = [np.zeros(mat.shape) for mat in self.weights]
+        self.last_bias_change = [np.zeros(mat.shape) for mat in self.biases]
 
     def generate_weights(self):
         # seed random for determinism
@@ -136,8 +201,61 @@ class NeuralNetwork:
                 randomized_biases.append(layer_biases)
 
         self.biases = randomized_biases
+    
+    def forward_propagation(self, layer_inputs):
+        layers = []
+        node_outputs = []
+        node_net_inputs = []
         
-    def train_compile(self, inputs, true_outputs, activation_function, loss_function, optimizer_algo, learning_rate = 0.1, epochs=100):
+        # we start the iteration from the first hidden layer instead of the input layer 
+        for iter in range(1, self.num_layers):
+            layer_name = "layer_" + str(iter)
+            weights_at_layer = self.weights[iter - 1] # takes the weights that go from the previous layer to the current layer
+        
+            self.layer_name = NeuralLayer(self.num_nodes[iter], weights_at_layer, self.biases[iter])
+            net_inputs, outputs = self.layer_name.feedforward(layer_inputs, self.activation_function)
+
+            layers.append(self.layer_name)
+            node_outputs.append(np.array(outputs))
+                
+            # for the inner/hidden layers the outputs become the inputs for the next layer
+            if iter < self.num_layers - 1:
+                # the outputs become inputs for the next nodes
+                layer_inputs = outputs
+            # else we have the final outputs for this pass of forward propagation
+
+            node_net_inputs.append(np.array(net_inputs))
+        return layers, node_net_inputs, node_outputs
+    
+    def back_propagation(self, true_outputs, node_outputs):
+        # call the specific back propagation algorithm
+        getattr(OptimizationAlgorithms(), self.optimizer_algo)(self.learning_rate, 
+                                                               self.momentum, 
+                                                               self.node_net_inputs, 
+                                                               true_outputs, 
+                                                               node_outputs, 
+                                                               self.activation_function, 
+                                                               self.loss_function, 
+                                                               self.weights, 
+                                                               self.biases,
+                                                               self.last_weight_change,
+                                                               self.last_bias_change)
+
+    def train_compile(self, 
+                      inputs, 
+                      true_outputs, 
+                      activation_function, 
+                      loss_function, 
+                      optimizer_algo, 
+                      learning_rate = 0.01, 
+                      momentum = 0.1, 
+                      epochs=100):
+        self.activation_function = activation_function
+        self.loss_function = loss_function
+        self.optimizer_algo = optimizer_algo
+        self.learning_rate = learning_rate
+        self.momentum = momentum
+
         # convert the inputs to an numpy array
         inputs = np.array(inputs)
         true_outputs = np.array(true_outputs)
@@ -145,127 +263,18 @@ class NeuralNetwork:
         # do n amount of forward and back propagation based off the value of epochs
         for epoch in range(epochs):
             # create an array of the layers and all the outputs that were calculated at each node
-            layers = []
-            node_outputs = []
-
             layer_inputs = inputs
 
-            # forward propagation
-            # we start the iteration from the first hidden layer instead of the input layer 
-            for iter in range(1, self.num_layers):
-                layer_name = "layer_" + str(iter)
-                weights_at_layer = self.weights[iter - 1] # takes the weights that go from the previous layer to the current layer
+            # call forward propagation
+            layers, node_net_inputs, node_outputs = self.forward_propagation(layer_inputs)
+            self.node_net_inputs = node_net_inputs
+            self.layers = layers
 
-                self.layer_name = NeuralLayer(self.num_nodes[iter], weights_at_layer, self.biases[iter])
-                outputs = self.layer_name.feedforward(layer_inputs, activation_function)
-
-                layers.append(self.layer_name)
-                node_outputs.append(np.array(outputs))
-                
-                # for the inner/hidden layers the outputs become the inputs for the next layer
-                if iter < self.num_layers - 1:
-                    # the outputs become inputs for the next nodes
-                    layer_inputs = outputs
-                # else we have the final outputs for this pass of forward propagation
-            
-            # then do back propagation (using Stochastic Gradient Descent)
-            # compute the gradients of the parameters
-            # compute deriv_error / deriv_w_? for each weights
-            # need to compute partial derivatives of deriv_total_error / deriv_y_pred, deriv_y_pred / derive_hidden_?, deriv_hidden_? / deriv_w_? for each output of nodes and their weight
-            # also need to compute deriv_hidden_? / deriv_bias_? for each nodes
-            # the variable representation of these will be in the form: (in the case of deriv_total_error / deriv_w_?) d_L_d_w? where ? is the numeric identifier of a specific weight
-            
-            # the arrays for the derivatives start from the last layer and go back forwards
-            d_L_d_y_pred = []
-            d_y_pred_d_w = []
-            d_y_pred_d_b = []
-            d_y_pred_d_h = []
-
-            # initialize d_y_pred_d_h for outputs (when h is the outputs), where the d_y_pred_d_h is 1:
-            d_y_pred_out = []
-            for iter in range(len(self.weights[self.num_layers - 2])):
-                d_y_pred_out.append(1)
-            d_y_pred_d_h.append(np.array(d_y_pred_out))
-
-            node_output_position = len(node_outputs) - 1
-            for outputs in reversed(node_outputs):
-                d_L_d_y_pred_layer = []
-                d_y_pred_d_w_layer = []
-                d_y_pred_d_b_layer = []
-                d_y_pred_d_h_layer = []
-                
-                prev_layer_i = node_output_position - 1
-
-                if (prev_layer_i == -1):
-                    weights_from_layer = self.weights[0]
-
-                    for output in outputs:
-                        d_y_pred_d_w_node = []
-                        d_y_pred_d_h_node = []
-
-                        # I don't think I need to find d_y_pred_d_hi for the first hidden node to input nodes
-                        # but I will keep it for now
-                        weights_to_node = weights_from_layer[:, node_output_position]
-
-                        for input in inputs:
-                            d_y_pred_d_wi = input * getattr(ActivationFunction(), activation_function)(output, deriv=True)
-                            d_y_pred_d_w_node.append(d_y_pred_d_wi)
-
-                        for weight in weights_to_node:
-                            d_y_pred_d_hi = weight * getattr(ActivationFunction(), activation_function)(output, deriv=True)
-                            d_y_pred_d_h_node.append(d_y_pred_d_hi)
-
-                        d_y_pred_d_bi = getattr(ActivationFunction(), activation_function)(output, deriv=True)
-                        d_y_pred_d_b_layer.append(d_y_pred_d_bi)
-
-                        d_y_pred_d_w_layer.append(np.array(d_y_pred_d_w_node))
-                        d_y_pred_d_h_layer.append(np.array(d_y_pred_d_h_node))
-                    d_y_pred_d_w.append(np.array(d_y_pred_d_w_layer))
-                    d_y_pred_d_b.append(np.array(d_y_pred_d_b_layer))
-                    d_y_pred_d_h.append(np.array(d_y_pred_d_h_layer))
-
-                    break
-
-                weights_from_layer = self.weights[prev_layer_i + 1]
-
-                if (node_output_position + 1 > len(node_outputs) - 1):
-                    d_L_d_y_pred_layer = getattr(LossFunction(), loss_function)(true_outputs, outputs, deriv=True)
-
-                for output in outputs:
-                    d_L_d_y_pred_node = []
-                    d_y_pred_d_w_node = []
-                    d_y_pred_d_h_node = []
-                    
-                    weights_to_node = weights_from_layer[:, prev_layer_i]
-
-                    for prev_node in node_outputs[prev_layer_i]:
-                        d_y_pred_d_wi = prev_node * getattr(ActivationFunction(), activation_function)(output, deriv=True)
-                        d_y_pred_d_w_node.append(d_y_pred_d_wi)
-
-                    for weight in weights_to_node:
-                        d_y_pred_d_hi = weight * getattr(ActivationFunction(), activation_function)(output, deriv=True)
-                        d_y_pred_d_h_node.append(d_y_pred_d_hi)
-
-                    d_y_pred_d_bi = getattr(ActivationFunction(), activation_function)(output, deriv=True)
-                    d_y_pred_d_b_layer.append(d_y_pred_d_bi)
-                    
-                    d_L_d_y_pred_layer.append(np.array(d_L_d_y_pred_node))
-                    d_y_pred_d_w_layer.append(np.array(d_y_pred_d_w_node))
-                    d_y_pred_d_h_layer.append(np.array(d_y_pred_d_h_node))
-                d_L_d_y_pred.append(np.array(d_L_d_y_pred_layer))
-                d_y_pred_d_w.append(np.array(d_y_pred_d_w_layer))
-                d_y_pred_d_b.append(np.array(d_y_pred_d_b_layer))
-                d_y_pred_d_h.append(np.array(d_y_pred_d_h_layer))
-
-                # update node_output_position for next layer back in the network
-                node_output_position -= 1
-            
-            print(d_L_d_y_pred)
-
-            # then use all the arrays of the 
+            # then do back propagation
+            self.back_propagation(true_outputs, node_outputs)
 
             # calculate the total error 
             total_error = getattr(LossFunction(), loss_function)(true_outputs, node_outputs[-1])
 
-network = NeuralNetwork([3, 6, 2])
-network.train_compile([0, 1, 0], [0, 1], "sigmoid", "mean_squared_error", "stochastic_gradient_descent", 0.3, 1)
+network = NeuralNetwork([3, 6, 2, 2])
+network.train_compile([0, 1, 0], [0, 1], "sigmoid", "mean_squared_error", "stochastic_gradient_descent", 0.3, 0.1, 1)
