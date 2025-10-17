@@ -159,9 +159,10 @@ class NeuralLayer:
 # train_compile method: takes the data and true outputs,
 # also takes an activation function, can be called with a learning rate (default to 0.1), and epochs (default to 100)
 class NeuralNetwork:
-    def __init__(self, node_array):
+    def __init__(self, node_array, activation_function):
         self.num_layers = len(node_array)
         self.num_nodes = node_array
+        self.activation_function = activation_function  
 
         self.generate_weights()
         self.generate_biases()
@@ -241,22 +242,10 @@ class NeuralNetwork:
                                                                                                                                                 self.weights, 
                                                                                                                                                 self.biases,
                                                                                                                                                 self.input_activation)
-
-    def train_compile(self, 
-                      inputs, 
-                      true_outputs, 
-                      activation_function, 
-                      loss_function, 
-                      optimizer_algo, 
-                      learning_rate = 0.01, 
-                      momentum = 0.1, 
-                      epochs=100):
-        self.activation_function = activation_function
-        self.loss_function = loss_function
-        self.optimizer_algo = optimizer_algo
-        self.learning_rate = learning_rate
-        self.momentum = momentum
-
+    def fit(self,
+            inputs, 
+            true_outputs,
+            epochs=100):
         # convert the inputs to an numpy array
         inputs = np.array(inputs)
         self.input_activation = inputs
@@ -276,15 +265,34 @@ class NeuralNetwork:
             self.back_propagation(true_outputs, node_outputs)
 
             # calculate the error for the epoch
-            error_for_epoch = getattr(LossFunction(), loss_function)(true_outputs, node_outputs[-1])
+            error_for_epoch = getattr(LossFunction(), self.loss_function)(true_outputs, node_outputs[-1])
             print('Training Lost for epoch', epoch, ":", error_for_epoch)
         
         # calculate the total error
-        total_error = getattr(LossFunction(), loss_function)(true_outputs, node_outputs[-1])
+        total_error = getattr(LossFunction(), self.loss_function)(true_outputs, node_outputs[-1])
         print('Final error for training:', error_for_epoch)
 
         # display new weights
         print("weights:", self.weights)
 
-network = NeuralNetwork([3, 6, 4])
-network.train_compile([0, 1, 0], [0, 0, 1, 0], "sigmoid", "mean_squared_error", "stochastic_gradient_descent", 0.3, 0.1, 10)
+    def compile(self, 
+                optimizer_algo, 
+                loss_function,
+                learning_rate = 0.01, 
+                momentum = 0.1):
+        self.loss_function = loss_function
+        self.optimizer_algo = optimizer_algo
+        self.learning_rate = learning_rate
+        self.momentum = momentum
+
+# akin to making the sequential models in tensor
+network = NeuralNetwork([3, 6, 4], "sigmoid")
+
+# compiling
+network.compile(optimizer_algo = "stochastic_gradient_descent", 
+                loss_function = "mean_squared_error", 
+                learning_rate = 0.3, 
+                momentum = 0.1)
+
+# fitting
+network.fit([0, 1, 0], [0, 0, 1, 0], 100)
