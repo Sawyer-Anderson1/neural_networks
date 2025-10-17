@@ -4,33 +4,87 @@ import numpy as np
 class ActivationFunction:
     # step activation function, so any values (weighted inputs) greater than 0 return 1, else 0
     def step_function(self, x):
-        if x > 0:
-            return 1
-        else:
-            return 0
+        # if x is array-like, behave elementwise and return numpy array
+        if np.isscalar(x) or getattr(x, "shape", ()) == ():
+            return 1 if x > 0 else 0
+        x = np.asarray(x)
+        return (x > 0).astype(int)
     
     # sigmoid activation function
     def sigmoid(self, x, deriv=False):
         # have to implement a stable version of this function for very large negative and positive values
-        if x.all() >= 0:
-            out = 1/(1+np.exp(-x))
-        else:
-            out = np.exp(x) / (np.exp(x) + 1)
+        if np.isscalar(x) or getattr(x, "shape", ()) == ():
+            x = float(x)
+            if x >= 0:
+                out = 1.0 / (1.0 + np.exp(-x))
+            else:
+                ex = np.exp(x)
+                out = ex / (1.0 + ex)
+            return out * (1.0 - out) if deriv else out
 
-        if deriv == True:
-            return out*(1-out)
-        return out
+        # array path (elementwise, avoids overflow)
+        x = np.asarray(x, dtype=float)
+        out = np.empty_like(x)
+        pos = x >= 0
+        out[pos] = 1.0 / (1.0 + np.exp(-x[pos]))   # safe for positive entries
+        neg = ~pos
+        ex = np.exp(x[neg])
+        out[neg] = ex / (1.0 + ex)                 # safe for negative entries
+
+        return out * (1.0 - out) if deriv else out
     
     # ReLu activation function
-    def relu(self, x):
-        return max(0, x)
+    def relu(self, x, deriv=False):
+        if deriv:
+            # derivative of ReLU: 1 for x>0 else 0
+            if np.isscalar(x) or getattr(x, "shape", ()) == ():
+                return 1 if x > 0 else 0
+            x = np.asarray(x)
+            return (x > 0).astype(float)
+        # forward
+        if np.isscalar(x) or getattr(x, "shape", ()) == ():
+            return max(0.0, x)
+        x = np.asarray(x)
+        return np.maximum(0.0, x)
     
     # softmax activation function
     def softmax(self, x):
-        exponentiation_values = np.exp(x)
-        normalization_sum = exponentiation_values.sum()
+        # expects 1D array of logits; subtract max for stability
+        x = np.asarray(x, dtype=float)
+        x_max = np.max(x)
+        exps = np.exp(x - x_max)
+        return exps / np.sum(exps)
 
-        return exponentiation_values / normalization_sum
+    def retrieve_threshold(self, activation_function):
+        if activation_function == 'sigmoid':
+            return 0.5
+        # ...
+
+# Loss function(s) class: for regression has MAE, MSE and for categoricalization has Cross-entropy and its types, Hinge
+class LossFunction:
+    def mean_absolute_error(self, y_true, y_pred, deriv=False):
+        return (np.abs(y_true - y_pred)).mean()
+
+    def mean_squared_error(self, y_true, y_pred, deriv=False):
+        if deriv == True:
+            N = y_true.shape[0]
+            return -2*(y_true - y_pred) / N
+        return ((y_true - y_pred) ** 2).mean()
+
+    def cross_entropy(self, cross_entropy_type):
+        if cross_entropy_type == 'categorical':
+            self.categorical_ce()
+        elif cross_entropy_type == 'binary':
+            self.binary_ce()
+
+    def categorical_ce(self):
+        print('placeholder')
+
+    def binary_ce(self):
+        print('placeholder')
+    
+    def hinge(self):
+        print('placeholder')
 
 class OptimizationAlgorithms:
     def __init__(self,
@@ -97,32 +151,6 @@ class OptimizationAlgorithms:
                 d_act_prev = getattr(ActivationFunction(), activation_function)(node_net_inputs[l - 1], deriv=True)
         
                 delta = delta * d_act_prev.reshape(-1, 1)
-
-# Loss function(s) class: for regression has MAE, MSE and for categoricalization has Cross-entropy and its types, Hinge
-class LossFunction:
-    def mean_absolute_error(self, y_true, y_pred, deriv=False):
-        return (np.abs(y_true - y_pred)).mean()
-
-    def mean_squared_error(self, y_true, y_pred, deriv=False):
-        if deriv == True:
-            N = y_true.shape[0]
-            return -2*(y_true - y_pred) / N
-        return ((y_true - y_pred) ** 2).mean()
-
-    def cross_entropy(self, cross_entropy_type):
-        if cross_entropy_type == 'categorical':
-            self.categorical_ce()
-        elif cross_entropy_type == 'binary':
-            self.binary_ce()
-
-    def categorical_ce(self):
-        print('placeholder')
-
-    def binary_ce(self):
-        print('placeholder')
-    
-    def hinge(self):
-        print('placeholder')
 
 # Neuron class capable of forward propagation, takes weights, bias, and its inputs
 class Neuron:
@@ -246,6 +274,39 @@ class NeuralNetwork:
                                                                                                                                                 self.weights, 
                                                                                                                                                 self.biases,
                                                                                                                                                 self.input_activation[input_id])
+
+    def apply_threshold(self, outputs):
+        # get threshold for activation function
+        threshold = getattr(ActivationFunction(), 'retrieve_threshold')(self.activation_function)
+
+        # then apply threshold
+        output_id = 0
+        for output_values in outputs:
+            for index in range(len(output_values)):
+                if output_values[index] >= threshold:
+                    output_values[index] = 1
+                else:
+                    output_values[index] = 0
+
+            outputs[output_id] = output_values
+            output_id += 1
+
+        # then return the classified output
+        return outputs
+    
+    def calculate_accuracy(self, true_outputs, outputs):
+        correct_count = 0
+        output_id = 0
+
+        # apply threshold to the outputs calculated by the activation function
+        outputs = self.apply_threshold(outputs)
+
+        for true_output in true_outputs:
+            if np.array_equal(true_output, outputs[output_id]):
+                correct_count += 1
+        
+        return float(correct_count) / len(true_outputs)
+
     def fit(self,
             train_inputs, 
             train_outputs,
@@ -260,23 +321,32 @@ class NeuralNetwork:
         for epoch in range(epochs):
             input_id = 0
             epoch_errors = []
+            epoch_final_outputs = []
             for inputs in train_inputs:
                 # call forward propagation
                 layers, node_net_inputs, node_outputs = self.forward_propagation(inputs)
                 self.node_net_inputs = node_net_inputs
                 self.layers = layers
-
+                
                 # then do back propagation
                 self.back_propagation(input_id, true_outputs[input_id], node_outputs)
                 
                 # calculating the error for this input in the epoch, which will later be averaged for the error for the whole epoch
                 epoch_errors.append(getattr(LossFunction(), self.loss_function)(true_outputs[input_id], node_outputs[-1]))
 
+                # add the final output for an input to epoch_final_outputs
+                epoch_final_outputs.append(node_outputs[-1])
+
                 input_id += 1
             # averaging the error of all the errors of the epoch and displaying it
             error_for_epoch = np.array(epoch_errors).mean()
             epoch_errors.append(error_for_epoch)
             print('Training Lost for epoch', epoch, ":", error_for_epoch)
+
+            # calculate accuracy
+            epoch_accuracy = self.calculate_accuracy(true_outputs, epoch_final_outputs)
+            
+            print('Training Accuracy for epoch', epoch, ':', epoch_accuracy)
 
         # displaying the final error, which was the error of the final epoch
         print('Final error for training:', epoch_errors[-1])
@@ -294,9 +364,10 @@ class NeuralNetwork:
         self.learning_rate = learning_rate
         self.momentum = momentum
     
-    # def 
+    #def evaulate(self, test_inputs, test_outputs):
+
 # akin to making the sequential models in tensor
-network = NeuralNetwork([3, 6, 4], "sigmoid")
+network = NeuralNetwork([3, 6, 3], "sigmoid")
 
 # compiling
 network.compile(optimizer_algo = "stochastic_gradient_descent", 
@@ -306,5 +377,5 @@ network.compile(optimizer_algo = "stochastic_gradient_descent",
 
 # fitting
 network.fit(train_inputs = [[0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 0, 0]],
-            train_outputs = [[0, 0, 1, 0], [0, 0, 0, 1], [0, 1, 0, 0], [1, 0, 0, 0]],
+            train_outputs = [[0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 0]],
             epochs = 100)
