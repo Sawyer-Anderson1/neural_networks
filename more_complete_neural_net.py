@@ -295,16 +295,17 @@ class NeuralNetwork:
         return outputs
     
     def calculate_accuracy(self, true_outputs, outputs):
-        correct_count = 0
-        output_id = 0
-
         # apply threshold to the outputs calculated by the activation function
         outputs = self.apply_threshold(outputs)
 
+        correct_count = 0
+        output_id = 0
         for true_output in true_outputs:
+            #print(true_output, outputs[output_id])
             if np.array_equal(true_output, outputs[output_id]):
                 correct_count += 1
-        
+            output_id += 1
+
         return float(correct_count) / len(true_outputs)
 
     def fit(self,
@@ -378,4 +379,4 @@ network.compile(optimizer_algo = "stochastic_gradient_descent",
 # fitting
 network.fit(train_inputs = [[0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 0, 0]],
             train_outputs = [[0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 0]],
-            epochs = 100)
+            epochs = 200)
