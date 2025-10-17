@@ -11,10 +11,16 @@ class ActivationFunction:
     
     # sigmoid activation function
     def sigmoid(self, x, deriv=False):
-        if deriv == True:
-            return x*(x-1)
-        return 1/(1+np.exp(-x))
+        # have to implement a stable version of this function for very large negative and positive values
+        if x.all() >= 0:
+            out = 1/(1+np.exp(-x))
+        else:
+            out = np.exp(x) / (np.exp(x) + 1)
 
+        if deriv == True:
+            return out*(1-out)
+        return out
+    
     # ReLu activation function
     def relu(self, x):
         return max(0, x)
@@ -185,8 +191,6 @@ class NeuralNetwork:
 
         self.weights = randomized_weights
 
-        print(self.weights)
-
     def generate_biases(self):
         # seed random for determinism
         np.random.seed(1)
@@ -232,7 +236,7 @@ class NeuralNetwork:
 
         return layers, node_net_inputs, node_outputs
     
-    def back_propagation(self, true_outputs, node_outputs):
+    def back_propagation(self, input_id, true_outputs, node_outputs):
         # call the specific back propagation algorithm
         getattr(OptimizationAlgorithms(self.learning_rate, self.momentum, self.last_weight_change, self.last_bias_change), self.optimizer_algo)(self.node_net_inputs, 
                                                                                                                                                 true_outputs, 
@@ -241,38 +245,43 @@ class NeuralNetwork:
                                                                                                                                                 self.loss_function, 
                                                                                                                                                 self.weights, 
                                                                                                                                                 self.biases,
-                                                                                                                                                self.input_activation)
+                                                                                                                                                self.input_activation[input_id])
     def fit(self,
-            inputs, 
-            true_outputs,
+            train_inputs, 
+            train_outputs,
             epochs=100):
         # convert the inputs to an numpy array
-        inputs = np.array(inputs)
-        self.input_activation = inputs
-        true_outputs = np.array(true_outputs)
+        train_inputs = np.array(train_inputs)
+        self.input_activation = train_inputs
+        true_outputs = np.array(train_outputs)
 
         # do n amount of forward and back propagation based off the value of epochs
+        epoch_errors = []
         for epoch in range(epochs):
-            # create an array of the layers and all the outputs that were calculated at each node
-            layer_inputs = inputs
+            input_id = 0
+            epoch_errors = []
+            for inputs in train_inputs:
+                # call forward propagation
+                layers, node_net_inputs, node_outputs = self.forward_propagation(inputs)
+                self.node_net_inputs = node_net_inputs
+                self.layers = layers
 
-            # call forward propagation
-            layers, node_net_inputs, node_outputs = self.forward_propagation(layer_inputs)
-            self.node_net_inputs = node_net_inputs
-            self.layers = layers
+                # then do back propagation
+                self.back_propagation(input_id, true_outputs[input_id], node_outputs)
+                
+                # calculating the error for this input in the epoch, which will later be averaged for the error for the whole epoch
+                epoch_errors.append(getattr(LossFunction(), self.loss_function)(true_outputs[input_id], node_outputs[-1]))
 
-            # then do back propagation
-            self.back_propagation(true_outputs, node_outputs)
-
-            # calculate the error for the epoch
-            error_for_epoch = getattr(LossFunction(), self.loss_function)(true_outputs, node_outputs[-1])
+                input_id += 1
+            # averaging the error of all the errors of the epoch and displaying it
+            error_for_epoch = np.array(epoch_errors).mean()
+            epoch_errors.append(error_for_epoch)
             print('Training Lost for epoch', epoch, ":", error_for_epoch)
-        
-        # calculate the total error
-        total_error = getattr(LossFunction(), self.loss_function)(true_outputs, node_outputs[-1])
-        print('Final error for training:', error_for_epoch)
 
-        # display new weights
+        # displaying the final error, which was the error of the final epoch
+        print('Final error for training:', epoch_errors[-1])
+
+        # display final weights
         print("weights:", self.weights)
 
     def compile(self, 
@@ -284,7 +293,8 @@ class NeuralNetwork:
         self.optimizer_algo = optimizer_algo
         self.learning_rate = learning_rate
         self.momentum = momentum
-
+    
+    # def 
 # akin to making the sequential models in tensor
 network = NeuralNetwork([3, 6, 4], "sigmoid")
 
@@ -295,4 +305,6 @@ network.compile(optimizer_algo = "stochastic_gradient_descent",
                 momentum = 0.1)
 
 # fitting
-network.fit([0, 1, 0], [0, 0, 1, 0], 100)
+network.fit(train_inputs = [[0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 0, 0]],
+            train_outputs = [[0, 0, 1, 0], [0, 0, 0, 1], [0, 1, 0, 0], [1, 0, 0, 0]],
+            epochs = 100)
