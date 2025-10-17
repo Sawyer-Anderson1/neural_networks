@@ -27,68 +27,70 @@ class ActivationFunction:
         return exponentiation_values / normalization_sum
 
 class OptimizationAlgorithms:
-    def gradient_descent(self, layer_idx, gradient_mat, bias_gradient_mat):
-        # calculate changes in weights and biases
-        delta_weight = (self.momentum * self.last_weight_change[layer_idx]) - (self.learning_rate * gradient_mat)
-
-        delta_bias = (self.momentum * self.last_bias_change[layer_idx]) - (self.learning_rate * bias_gradient_mat)
-
-        # update weights
-        self.weights[layer_idx] += delta_weight
-        self.biases[layer_idx] += delta_bias
-
-        # keep track of the latest changes to weights and biases
-        self.last_weight_change[layer_idx] = 1 * delta_weight
-        self.last_bias_change[layer_idx] = 1 * delta_bias
-
-    # will have stochastic gradient descent, adam, etc.
-    def stochastic_gradient_descent(self, 
-                                    learning_rate, 
-                                    momentum, 
-                                    node_net_inputs, 
-                                    true_outputs, 
-                                    node_outputs, 
-                                    activation_function, 
-                                    loss_function, 
-                                    weights, 
-                                    biases, 
-                                    last_weight_change, 
-                                    last_bias_change):
+    def __init__(self,
+                learning_rate, 
+                momentum,
+                last_weight_change, 
+                last_bias_change):
         self.learning_rate = learning_rate
         self.momentum = momentum
-        self.weights = weights
-        self.biases = biases
 
         self.last_weight_change = last_weight_change
         self.last_bias_change = last_bias_change
 
-        for iter in range(len(node_outputs) + 1):
-            # node_outputs only has the values for the hidden nodes and the output nodes (so do back_index - 1)
-            back_index = len(node_outputs) - iter - 1
-            
-            print(node_outputs[back_index])
-            if iter == 0: # the final/output layer
-                d_activation = getattr(ActivationFunction(), activation_function)(node_net_inputs[back_index], deriv=True)
-                d_error = getattr(LossFunction(), loss_function)(true_outputs, node_outputs[back_index], deriv=True)
-                delta = d_error * d_activation
+    def gradient_descent(self, layer_idx, gradient_mat, bias_gradient_mat, weights, biases):
+        # calculate changes in weights and biases
+        delta_weight = (self.momentum * self.last_weight_change[layer_idx]) - (self.learning_rate * gradient_mat)
 
-                gradient_mat = np.dot(node_outputs[back_index].T, delta)
-                bias_gradient_mat = 1 * delta
+        delta_bias = (self.momentum * self.last_bias_change[layer_idx + 1]) - (self.learning_rate * bias_gradient_mat.reshape(-1))
 
-                # apply gradient descent
-                self.gradient_descent(back_index, gradient_mat, bias_gradient_mat)
+        # update weights
+        weights[layer_idx] += delta_weight
+        biases[layer_idx + 1] += delta_bias
 
+        # keep track of the latest changes to weights and biases
+        self.last_weight_change[layer_idx] = 1 * delta_weight
+        self.last_bias_change[layer_idx + 1] = 1 * delta_bias
+
+    # will have stochastic gradient descent, adam, etc.
+    def stochastic_gradient_descent(self,
+                                    node_net_inputs, 
+                                    true_outputs, 
+                                    node_outputs, 
+                                    activation_function, 
+                                    loss_function,
+                                    weights,
+                                    biases,
+                                    input_activation = None):
+        L = len(node_outputs)
+
+        last_idx = L - 1
+
+        # computing delta for output layer
+        d_activation = getattr(ActivationFunction(), activation_function)(node_net_inputs[last_idx], deriv=True)
+        d_error = getattr(LossFunction(), loss_function)(true_outputs, node_outputs[last_idx], deriv=True)
+
+        delta = d_error.reshape(-1, 1) * d_activation.reshape(-1, 1)
+
+        for l in range(last_idx, -1, -1):
+            if l == 0: # the previous layer is the network's input
+                a_prev = input_activation.reshape(-1, 1)
             else: # the hidden layers
-                W_trans = weights[back_index + 1].T
-                d_activation = getattr(ActivationFunction(), activation_function)(node_net_inputs[back_index], deriv=True)
-                d_error = getattr(LossFunction(), loss_function)(delta, W_trans)
-                delta = d_error * d_activation
+                a_prev = node_outputs[l - 1].reshape(-1, 1)
 
-                gradient_mat = np.dot(node_outputs[back_index].T, delta)
-                bias_gradient_mat = 1 * delta
+            gradient_mat = a_prev @ delta.T
+            bias_gradient_mat = 1 * delta.reshape(-1)
 
-                # apply gradient descent
-                self.gradient_descent(back_index, gradient_mat, bias_gradient_mat)
+            # apply gradient descent
+            self.gradient_descent(l, gradient_mat, bias_gradient_mat, weights, biases)
+
+            if l > 0:
+                # prepare delta for next layer
+                delta = (weights[l] @ delta).reshape(-1, 1)
+
+                d_act_prev = getattr(ActivationFunction(), activation_function)(node_net_inputs[l - 1], deriv=True)
+        
+                delta = delta * d_act_prev.reshape(-1, 1)
 
 # Loss function(s) class: for regression has MAE, MSE and for categoricalization has Cross-entropy and its types, Hinge
 class LossFunction:
@@ -182,6 +184,8 @@ class NeuralNetwork:
 
         self.weights = randomized_weights
 
+        print(self.weights)
+
     def generate_biases(self):
         # seed random for determinism
         np.random.seed(1)
@@ -216,30 +220,27 @@ class NeuralNetwork:
             net_inputs, outputs = self.layer_name.feedforward(layer_inputs, self.activation_function)
 
             layers.append(self.layer_name)
+            node_net_inputs.append(np.array(net_inputs))
             node_outputs.append(np.array(outputs))
-                
+
             # for the inner/hidden layers the outputs become the inputs for the next layer
             if iter < self.num_layers - 1:
                 # the outputs become inputs for the next nodes
                 layer_inputs = outputs
             # else we have the final outputs for this pass of forward propagation
 
-            node_net_inputs.append(np.array(net_inputs))
         return layers, node_net_inputs, node_outputs
     
     def back_propagation(self, true_outputs, node_outputs):
         # call the specific back propagation algorithm
-        getattr(OptimizationAlgorithms(), self.optimizer_algo)(self.learning_rate, 
-                                                               self.momentum, 
-                                                               self.node_net_inputs, 
-                                                               true_outputs, 
-                                                               node_outputs, 
-                                                               self.activation_function, 
-                                                               self.loss_function, 
-                                                               self.weights, 
-                                                               self.biases,
-                                                               self.last_weight_change,
-                                                               self.last_bias_change)
+        getattr(OptimizationAlgorithms(self.learning_rate, self.momentum, self.last_weight_change, self.last_bias_change), self.optimizer_algo)(self.node_net_inputs, 
+                                                                                                                                                true_outputs, 
+                                                                                                                                                node_outputs, 
+                                                                                                                                                self.activation_function, 
+                                                                                                                                                self.loss_function, 
+                                                                                                                                                self.weights, 
+                                                                                                                                                self.biases,
+                                                                                                                                                self.input_activation)
 
     def train_compile(self, 
                       inputs, 
@@ -258,6 +259,7 @@ class NeuralNetwork:
 
         # convert the inputs to an numpy array
         inputs = np.array(inputs)
+        self.input_activation = inputs
         true_outputs = np.array(true_outputs)
 
         # do n amount of forward and back propagation based off the value of epochs
@@ -273,8 +275,16 @@ class NeuralNetwork:
             # then do back propagation
             self.back_propagation(true_outputs, node_outputs)
 
-            # calculate the total error 
-            total_error = getattr(LossFunction(), loss_function)(true_outputs, node_outputs[-1])
+            # calculate the error for the epoch
+            error_for_epoch = getattr(LossFunction(), loss_function)(true_outputs, node_outputs[-1])
+            print('Training Lost for epoch', epoch, ":", error_for_epoch)
+        
+        # calculate the total error
+        total_error = getattr(LossFunction(), loss_function)(true_outputs, node_outputs[-1])
+        print('Final error for training:', error_for_epoch)
 
-network = NeuralNetwork([3, 6, 2, 2])
-network.train_compile([0, 1, 0], [0, 1], "sigmoid", "mean_squared_error", "stochastic_gradient_descent", 0.3, 0.1, 1)
+        # display new weights
+        print("weights:", self.weights)
+
+network = NeuralNetwork([3, 6, 4])
+network.train_compile([0, 1, 0], [0, 0, 1, 0], "sigmoid", "mean_squared_error", "stochastic_gradient_descent", 0.3, 0.1, 10)
