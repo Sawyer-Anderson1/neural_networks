@@ -136,8 +136,10 @@ class OptimizationAlgorithms:
         # keep track of the latest changes to weights and biases
         self.last_weight_change[layer_idx] = 1 * delta_weight
         self.last_bias_change[layer_idx + 1] = 1 * delta_bias
-
-    # will have stochastic gradient descent, adam, etc.
+        
+        # update the value of momentum
+        #new_momentum = 
+    
     def stochastic_gradient_descent(self,
                                     node_net_inputs, 
                                     true_outputs, 
@@ -176,6 +178,18 @@ class OptimizationAlgorithms:
                 d_act_prev = getattr(ActivationFunction(), activation_function)(node_net_inputs[l - 1], deriv=True)
         
                 delta = delta * d_act_prev.reshape(-1, 1)
+    
+    def adagrad(self):
+        print('placeholder')
+    
+    def rmsprop(self):
+        print('placeholder')
+    
+    def adadelta(self):
+        print('placeholder')
+    
+    def adam(self):
+        print('placeholder')
 
 # Neuron class capable of forward propagation, takes weights, bias, and its inputs
 class Neuron:
@@ -333,6 +347,16 @@ class NeuralNetwork:
 
         return float(correct_count) / len(true_outputs)
 
+    def compile(self, 
+                optimizer_algo, 
+                loss_function,
+                learning_rate = 0.01, 
+                momentum = 0.5):
+        self.loss_function = loss_function
+        self.optimizer_algo = optimizer_algo
+        self.learning_rate = learning_rate
+        self.momentum = momentum
+
     def fit(self,
             train_inputs, 
             train_outputs,
@@ -344,6 +368,7 @@ class NeuralNetwork:
 
         # do n amount of forward and back propagation based off the value of epochs
         epoch_errors = []
+        epoch_accuracies = []
         for epoch in range(epochs):
             input_id = 0
             epoch_errors = []
@@ -356,7 +381,7 @@ class NeuralNetwork:
                 
                 # then do back propagation
                 self.back_propagation(input_id, true_outputs[input_id], node_outputs)
-                
+
                 # calculating the error for this input in the epoch, which will later be averaged for the error for the whole epoch
                 epoch_errors.append(getattr(LossFunction(), self.loss_function)(true_outputs[input_id], node_outputs[-1]))
 
@@ -364,33 +389,49 @@ class NeuralNetwork:
                 epoch_final_outputs.append(node_outputs[-1])
 
                 input_id += 1
-            # averaging the error of all the errors of the epoch and displaying it
+            # averaging the error/loss of all the errors of the epoch and displaying it
             error_for_epoch = np.array(epoch_errors).mean()
             epoch_errors.append(error_for_epoch)
-            print('Training Lost for epoch', epoch, ":", error_for_epoch)
+            print('Training Loss for epoch', epoch, ":", error_for_epoch)
 
             # calculate accuracy
             epoch_accuracy = self.calculate_accuracy(true_outputs, epoch_final_outputs)
-            
+            epoch_accuracies.append(epoch_accuracy)
             print('Training Accuracy for epoch', epoch, ':', epoch_accuracy)
 
-        # displaying the final error, which was the error of the final epoch
-        print('Final error for training:', epoch_errors[-1])
+        # displaying the final error/loss, which was the error of the final epoch
+        print('Final Loss for training:', epoch_errors[-1])
+
+        # displaying the final accuracy of the model
+        print('Final accuracy for training:', epoch_accuracies[-1])
 
         # display final weights
-        print("weights:", self.weights)
-
-    def compile(self, 
-                optimizer_algo, 
-                loss_function,
-                learning_rate = 0.01, 
-                momentum = 0.1):
-        self.loss_function = loss_function
-        self.optimizer_algo = optimizer_algo
-        self.learning_rate = learning_rate
-        self.momentum = momentum
+        print("Final weights:", self.weights)
     
-    #def evaulate(self, test_inputs, test_outputs):
+    def evaluate(self, test_inputs, test_outputs):
+        model_outputs = []
+        test_loss = []
+        for input_id in range(len(test_inputs)):
+            # do forward propagation
+            _, _, node_outputs = self.forward_propagation(test_inputs[input_id])
+
+            # then calculate the error/loss
+            test_loss.append(getattr(LossFunction(), self.loss_function)(test_outputs[input_id], node_outputs[-1]))
+
+            model_outputs.append(node_outputs[-1])
+        
+        # average the error/loss for all the outputs of the test and display as the testing loss
+        avg_test_loss = np.array(test_loss).mean()
+        print('Testing Loss:', avg_test_loss)
+
+        # calculate the accuracy for the testing
+        testing_accuracy = self.calculate_accuracy(test_outputs, model_outputs)
+        print('Testing accuracy:', testing_accuracy)
+
+        return avg_test_loss, testing_accuracy
+    
+    def predict(self, inputs):
+        print('placeholder')
 
 # akin to making the sequential models in tensor
 network = NeuralNetwork([3, 6, 3], "sigmoid")
@@ -399,9 +440,12 @@ network = NeuralNetwork([3, 6, 3], "sigmoid")
 network.compile(optimizer_algo = "stochastic_gradient_descent", 
                 loss_function = "categorical_ce", 
                 learning_rate = 0.3, 
-                momentum = 0.1)
+                momentum = 0.5)
 
-# fitting
-network.fit(train_inputs = [[0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 0, 0]],
-            train_outputs = [[0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 0]],
+# training/fitting
+network.fit(train_inputs = [[0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 0, 0], [1, 1, 1]],
+            train_outputs = [[0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 0], [1, 1, 1]],
             epochs = 200)
+
+# testing/evaluating
+network.evaluate([[0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 0, 0], [1, 1, 1], [0, 0, 0], [1, 1, 1]], [[0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 0], [1, 1, 1], [0, 0, 0], [1, 0, 1]])
