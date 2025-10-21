@@ -41,6 +41,7 @@ class ActivationFunction:
                 return 1 if x > 0 else 0
             x = np.asarray(x)
             return (x > 0).astype(float)
+        
         # forward
         if np.isscalar(x) or getattr(x, "shape", ()) == ():
             return max(0.0, x)
@@ -71,20 +72,31 @@ class LossFunction:
             return -2*(y_true - y_pred) / N
         return ((y_true - y_pred) ** 2).mean()
 
-    def cross_entropy(self, cross_entropy_type):
-        if cross_entropy_type == 'categorical':
-            self.categorical_ce()
-        elif cross_entropy_type == 'binary':
-            self.binary_ce()
+    def categorical_ce(self, y_true, y_pred, deriv=False):
+        if deriv == True:
+            return y_pred - y_true
 
-    def categorical_ce(self):
-        print('placeholder')
+        cross_entropy_loss = 0
 
-    def binary_ce(self):
-        print('placeholder')
+        for iter in range(len(y_true)):
+            cross_entropy_loss += y_true[iter] * np.log(y_pred[iter])
+
+        return -(cross_entropy_loss)
+
+    def binary_ce(self, y_true, y_pred, deriv=False):
+        if deriv == True:
+            return (y_pred - y_true) / (y_pred * (1 - y_pred))
+        
+        if y_true == 1:
+            return -y_true * np.log(y_pred)
+        else:
+            return -(1 - y_true) * np.log(1 - y_pred)
     
-    def hinge(self):
-        print('placeholder')
+    def hinge(self, y_true, y_pred, deriv=False):
+        if deriv == True:
+            return -1 * y_true * (y_pred / (y_pred * (1 - y_pred)))
+        
+        return np.max(0, 1 - y_true * y_pred)
 
 class OptimizationAlgorithms:
     def __init__(self,
@@ -372,7 +384,7 @@ network = NeuralNetwork([3, 6, 3], "sigmoid")
 
 # compiling
 network.compile(optimizer_algo = "stochastic_gradient_descent", 
-                loss_function = "mean_squared_error", 
+                loss_function = "categorical_ce", 
                 learning_rate = 0.3, 
                 momentum = 0.1)
 
