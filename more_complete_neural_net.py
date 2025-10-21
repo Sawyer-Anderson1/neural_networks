@@ -49,12 +49,17 @@ class ActivationFunction:
         return np.maximum(0.0, x)
     
     # softmax activation function
-    def softmax(self, x):
+    def softmax(self, x, deriv=False):
         # expects 1D array of logits; subtract max for stability
         x = np.asarray(x, dtype=float)
         x_max = np.max(x)
         exps = np.exp(x - x_max)
-        return exps / np.sum(exps)
+        softmax = exps / np.sum(exps)
+
+        if deriv == True:
+            softmax.reshape(1, -1)
+            return softmax * np.identity(softmax.size) - softmax.transpose() @ softmax
+        return softmax
 
     def retrieve_threshold(self, activation_function):
         if activation_function == 'sigmoid':
@@ -64,6 +69,14 @@ class ActivationFunction:
 # Loss function(s) class: for regression has MAE, MSE and for categoricalization has Cross-entropy and its types, Hinge
 class LossFunction:
     def mean_absolute_error(self, y_true, y_pred, deriv=False):
+        if deriv == True:
+            if y_pred > y_true:
+                return 1
+            elif y_pred < y_true:
+                return -1
+            else:
+                return 0
+            
         return (np.abs(y_true - y_pred)).mean()
 
     def mean_squared_error(self, y_true, y_pred, deriv=False):
