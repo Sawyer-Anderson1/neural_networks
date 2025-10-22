@@ -61,10 +61,20 @@ class ActivationFunction:
             return softmax * np.identity(softmax.size) - softmax.transpose() @ softmax
         return softmax
 
+    # tanh activation funciton
+    def tanh(self, x, deriv=False):
+        y = np.tanh(x)
+        
+        if deriv == True:
+            return 1 - np.sqrt(y)
+        return y
+    
+    # retrieve the thresholds
     def retrieve_threshold(self, activation_function):
         if activation_function == 'sigmoid':
             return 0.5
-        # ...
+        if activation_function == 'tanh':
+            return 0.0
 
 # Loss function(s) class: for regression has MAE, MSE and for categoricalization has Cross-entropy and its types, Hinge
 class LossFunction:
