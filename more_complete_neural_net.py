@@ -371,6 +371,9 @@ class NeuralNetwork:
             train_inputs, 
             train_outputs,
             epochs=100):
+        # dictionary to save the history of each epochs
+        history = {}
+
         # convert the inputs to an numpy array
         train_inputs = np.array(train_inputs)
         self.input_activation = train_inputs
@@ -409,6 +412,12 @@ class NeuralNetwork:
             epoch_accuracies.append(epoch_accuracy)
             print('Training Accuracy for epoch', epoch, ':', epoch_accuracy)
 
+            # have not yet added validation and batching
+            log = {'accuracy': epoch_accuracy, 'loss': error_for_epoch, 'val_accuracy': None, 'val_loss': None} 
+
+            # add the log to the history
+            history['epoch_' + str(epoch)] = log
+
         # displaying the final error/loss, which was the error of the final epoch
         print('Final Loss for training:', epoch_errors[-1])
 
@@ -417,6 +426,8 @@ class NeuralNetwork:
 
         # display final weights
         print("Final weights:", self.weights)
+
+        return history
     
     def evaluate(self, test_inputs, test_outputs):
         model_outputs = []
@@ -459,9 +470,10 @@ network.compile(optimizer_algo = "stochastic_gradient_descent",
                 momentum = 0.5)
 
 # training/fitting
-network.fit(train_inputs = [[0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 0, 0], [1, 1, 1]],
+model_history = network.fit(train_inputs = [[0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 0, 0], [1, 1, 1]],
             train_outputs = [[0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 0], [1, 1, 1]],
             epochs = 200)
+print(model_history['epoch_0'])
 
 # testing/evaluating
 network.evaluate([[0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 0, 0], [1, 1, 1], [0, 0, 0], [1, 1, 1]], [[0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 0], [1, 1, 1], [0, 0, 0], [1, 0, 1]])
