@@ -431,7 +431,13 @@ class NeuralNetwork:
         return avg_test_loss, testing_accuracy
     
     def predict(self, inputs):
-        print('placeholder')
+        outputs = []
+        for input in inputs:
+            _, _, node_outputs = self.forward_propagation(input)
+
+            outputs.append(node_outputs[-1])
+        
+        return outputs
 
 # akin to making the sequential models in tensor
 network = NeuralNetwork([3, 6, 3], "sigmoid")
@@ -449,3 +455,7 @@ network.fit(train_inputs = [[0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 0, 0], [1, 1, 1
 
 # testing/evaluating
 network.evaluate([[0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 0, 0], [1, 1, 1], [0, 0, 0], [1, 1, 1]], [[0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 0], [1, 1, 1], [0, 0, 0], [1, 0, 1]])
+
+# predicting outputs (so just doing the forward propagation)
+predictions = network.predict([[0, 1, 0]])
+print(network.apply_threshold(predictions))
